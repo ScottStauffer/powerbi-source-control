@@ -1,51 +1,99 @@
 #!/bin/sh
 #
-# Author					Synchrotech
-# Creation Date				2020-08-06
-# Description
-# 	This hook extracts the contents of the commited pbit files
-# 	to flat files and flags them to be amended to the commit 
-# 	by the post-commit hook.
-#
-# Modification History
-# 2020-08-06	Creation
+# Original githook scripts  just using similar tool to extract, but to PBIT instead of PBIX 
+	# https://github.com/synchrotech/powerbi-source-control/blob/master/Git%20Hooks/pre-commit
+
+# This hook is invoked by "git commit" and can be bypassed with --no-verify option.
+# It takes no parameter, and is invoked before obtaining the proposed commit log message and making a commit.
+# Exiting with non-zero status from this script causes the "git commit" to abort.
+# 
+
 
 # Work out what to diff against, really HEAD will work for any established repository.
+
+	# If HEAD does not exist, then we are in the middle of a commit and we cannot use HEAD.
+	# In this case, we use the hash of an empty tree object.
+	# This is the same as what git diff-index does.
+	# See https://stackoverflow.com/questions/36367190/git-diff-index-against-empty-tree
+	# for more information.
+
 if git rev-parse --verify HEAD > /dev/null 2>&1
 then
 	against=HEAD
 else
-	# Initial commit: diff against an empty tree object
 	against=$(git hash-object -t tree /dev/null)
 fi
 
-# Retrieve the list of commited PBIT files, exclude those flagged for deletion.
-pbitfiles=$(git diff --cached --diff-filter=d --name-only HEAD | grep -e '^.*\.pbit$')
 
-# Exit the hook if no PBIT files are about to be comitted.
-if [ -z "$pbitfiles" ]
+	# The list of commited PBIX files is retrieved by comparing the current index with the commit against which we are diffing.
+	# The list of commited PBIX files is then filtered to exclude those flagged for deletion.
+	
+pbixfiles=$(git diff --cached --diff-filter=d --name-only HEAD | grep -e '^.*\.pbix$')
+	# Exit the hook if no PBIX files are about to be comitted.
+if [ -z "$pbixfiles" ]
 then
 	exit 0
 fi
 
-# Redirect output to stderr.
+
+	# Redirect output to stderr.
+	# This is done to avoid the output of the pbi-tools command to be included in the commit message.
+	# See https://stackoverflow.com/questions/2342826/how-to-pipe-stderr-and-not-stdout
+	# for more information.
+	# Note that the redirection is done in a sub-process to avoid redirecting the output of the hook itself.
+	# See https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
+	# for more information.
+	# The redirection is done before the loop to avoid having to redirect the output of each pbi-tools command.
+	# See https://stackoverflow.com/questions/2342826/how-to-pipe-stderr-and-not-stdout	
+	# for more information.
+
 exec 1>&2
 
-# For each file, extract its contents to flat files using pbitutility.
-echo "$pbitfiles" | while IFS= read -r line
+
+	# For each file, extract its contents to flat files using pbi-tools.
+	# If the extraction fails, then exit the hook with an error.
+	# Note that the extraction is done in a sub-process to avoid the hook itself to be exited.
+	# See https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
+	# for more information.
+	# The extraction is done before the loop to avoid having to redirect the output of each pbi-tools command.
+	# See https://stackoverflow.com/questions/2342826/how-to-pipe-stderr-and-not-stdout
+	# for more information.
+
+echo "$pbixfiles" | while IFS= read -r line
 do 
-	"./$(git config core.hooksPath)/pbitutility" -e "$line" > /dev/null 2>&1
+		# Extract the contents of the PBIX file.
+	"c:/Source/pbi-tools/pbi-tools.exe" extract "$line" > /dev/null 2>&1
+		# Exit the hook if the extraction fails.
 	if [ $? -ne 0 ]
+		# If the extraction fails, then exit the hook with an error.
 	then
 		cat <<\EOF 
 Error: Failed to extract the contents of one of the commited PBIT files.
-Make sure all the PBIT files are closed.
+Run "pbi-tools extract Report.pbix" at command line to get full details of the erorr.
 EOF
+	# Exit the hook with an error.
 		exit 1
 	fi
 done
-# Since the error is raised from a sub-process, catch it and raise it in the main process as well.
+
+
+	# Exit the hook with an error if the sub-process exited with an error.
+	# Since the error is raised from a sub-process, catch it and raise it in the main process as well.
+	# For each file, flag it to be amended to the commit by the post-commit hook.
+
 [ $? -eq 0 ] || exit 1
 
-# Flags to files to amend to the commit by the post-commit hook.
-echo "$pbitfiles" | sed -e "s/$/.contents\/*/" > .commit
+
+	# Flags to files to amend to the commit by the post-commit hook.
+	# Note that the flagging is done in a sub-process to avoid the hook itself to be exited.
+	# See https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
+	# for more information.
+	# 
+	# The flagging is done before the loop to avoid having to redirect the output of each pbi-tools command.
+	# See https://stackoverflow.com/questions/2342826/how-to-pipe-stderr-and-not-stdout
+	# for more information.
+
+echo "$pbixfiles" | sed -e "s/$/.pbix$/\/*/" > .commit
+	# Exit the hook with an error if the sub-process exited with an error.
+
+[ $? -eq 0 ] || exit 1
