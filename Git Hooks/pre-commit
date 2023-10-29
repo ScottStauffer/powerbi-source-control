@@ -93,7 +93,7 @@ done
 	# See https://stackoverflow.com/questions/2342826/how-to-pipe-stderr-and-not-stdout
 	# for more information.
 
-echo "$pbixfiles" | sed -e "s/$/.pbix$/\/*/" > .commit
+echo "$pbixfiles" | sed -e "s/.pbix$/\/*/" > .commit
 	# Exit the hook with an error if the sub-process exited with an error.
 
 [ $? -eq 0 ] || exit 1
